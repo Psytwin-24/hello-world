@@ -1,0 +1,81 @@
+# Core
+numpy>=1.26.0
+pandas>=2.1.0
+scipy>=1.11.0
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+lightgbm>=4.1.0
+statsmodels>=0.14.0
+
+# Options pricing & analytics
+py_vollib>=1.0.1
+mibian>=0.1.3
+
+# Market data
+nsepython>=1.14
+yfinance>=0.2.31
+requests>=2.31.0
+aiohttp>=3.9.0
+websockets>=12.0
+httpx>=0.25.0
+
+# Broker integrations
+kiteconnect>=5.0.1       # Zerodha
+fyers-apiv3>=3.1.3       # Fyers
+smartapi-python>=1.3.14  # Angel One
+breeze-connect>=1.0.51   # ICICI Breeze
+
+# Async & scheduling
+apscheduler>=3.10.4
+asyncio-throttle>=1.0.2
+celery>=5.3.4
+redis>=5.0.1
+
+# Database
+sqlalchemy>=2.0.23
+alembic>=1.12.1
+psycopg2-binary>=2.9.9
+pymongo>=4.6.0
+
+# ML / Research
+optuna>=3.4.0            # Hyperparameter optimization
+ta>=0.11.0               # Technical analysis
+ta-lib>=0.4.28
+pandas-ta>=0.3.14b0
+pykalman>=0.9.7
+hmmlearn>=0.3.0          # Hidden Markov Models
+
+# Backtesting
+backtesting>=0.3.3
+vectorbt>=0.26.1
+
+# Visualization & Dashboard
+plotly>=5.18.0
+dash>=2.14.0
+dash-bootstrap-components>=1.5.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+
+# Risk / Portfolio
+cvxpy>=1.4.1
+pyportfolioopt>=1.5.5
+empyrical>=0.5.5
+
+# Utilities
+python-dotenv>=1.0.0
+loguru>=0.7.2
+pydantic>=2.5.0
+click>=8.1.7
+rich>=13.7.0
+tenacity>=8.2.3
+pytz>=2023.3
+arrow>=1.3.0
+
+# Notifications
+telegram>=0.0.1
+twilio>=8.10.0
+
+# Testing
+pytest>=7.4.3
+pytest-asyncio>=0.21.1
+pytest-mock>=3.12.0

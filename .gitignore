@@ -1,0 +1,46 @@
+# Secrets — NEVER commit
+.env
+*.env
+secrets/
+credentials/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+.venv/
+env/
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# ML models (large binaries — use model registry or DVC)
+models/*.pkl
+models/*.joblib
+models/*.h5
+
+# Data
+data/live/
+data/historical/*.parquet
+data/historical/*.csv
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/

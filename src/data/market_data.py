@@ -2,10 +2,11 @@
 Market data layer — fetches real-time & historical data from NSE/BSE.
 
 Sources (in priority order):
-  1. Broker WebSocket (Zerodha/Fyers) — real-time ticks
-  2. nsepython — free NSE scraper
-  3. yfinance — historical OHLCV
-  4. NSE India REST API — option chains, FII/DII data
+  1. Kite Connect API — option chains (primary, works from cloud servers)
+  2. NSE India REST API — option chains (fallback, blocked from cloud IPs)
+  3. Broker WebSocket (Zerodha/Fyers) — real-time ticks
+  4. nsepython — free NSE scraper
+  5. yfinance — historical OHLCV
 
 All data is normalised into canonical DataFrames and cached in Redis.
 """
@@ -23,6 +24,8 @@ import numpy as np
 import requests
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
+
+from data.kite_chain import KiteChainBuilder
 
 try:
     import nsepython as nse
@@ -47,7 +50,6 @@ NSE_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://www.nseindia.com/",
 }
-
 NSE_BASE = "https://www.nseindia.com/api"
 
 
@@ -82,9 +84,10 @@ class NSEDataClient:
         """Fetch full option chain from NSE."""
         session = await self._get_session()
         url = f"{NSE_BASE}/option-chain-indices?symbol={symbol}" \
-              if symbol in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY") \
-              else f"{NSE_BASE}/option-chain-equities?symbol={symbol}"
-        async with session.get(url, cookies=self._cookies, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            if symbol in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY") \
+            else f"{NSE_BASE}/option-chain-equities?symbol={symbol}"
+        async with session.get(url, cookies=self._cookies,
+                               timeout=aiohttp.ClientTimeout(total=15)) as resp:
             resp.raise_for_status()
             return await resp.json()
 
@@ -93,7 +96,8 @@ class NSEDataClient:
         """Get live quote for index or equity."""
         session = await self._get_session()
         url = f"{NSE_BASE}/quote-equity?symbol={symbol}"
-        async with session.get(url, cookies=self._cookies, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+        async with session.get(url, cookies=self._cookies,
+                               timeout=aiohttp.ClientTimeout(total=10)) as resp:
             resp.raise_for_status()
             return await resp.json()
 
@@ -102,7 +106,8 @@ class NSEDataClient:
         """Fetch FII/DII cash + derivatives data."""
         session = await self._get_session()
         url = f"{NSE_BASE}/fiidiiTradeReact"
-        async with session.get(url, cookies=self._cookies, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+        async with session.get(url, cookies=self._cookies,
+                               timeout=aiohttp.ClientTimeout(total=10)) as resp:
             resp.raise_for_status()
             return await resp.json()
 
@@ -118,7 +123,7 @@ class OptionChainParser:
     def parse(raw: Dict) -> Tuple[pd.DataFrame, float, str]:
         """
         Returns:
-            df: Option chain DataFrame (one row per strike × expiry × type)
+            df: Option chain DataFrame (one row per strike x expiry x type)
             spot: Current spot price
             expiry: Current/nearest expiry date string
         """
@@ -158,7 +163,6 @@ class OptionChainParser:
         df = pd.DataFrame(rows)
         return df, spot, nearest_expiry
 
-
 class HistoricalDataFetcher:
     """Fetch OHLCV history via yfinance (NSE suffix) and broker APIs."""
 
@@ -181,15 +185,19 @@ class HistoricalDataFetcher:
         interval: str = "1d",
     ) -> pd.DataFrame:
         """
-        Fetch OHLCV data. interval: 1m, 5m, 15m, 30m, 1h, 1d, 1wk, 1mo
+        Fetch OHLCV data.
+        interval: 1m, 5m, 15m, 30m, 1h, 1d, 1wk, 1mo
         """
         if not YF_AVAILABLE:
             raise RuntimeError("yfinance not installed")
+
         ticker = self.get_yf_ticker(symbol)
         df = yf.download(ticker, period=period, interval=interval, progress=False)
+
         if df.empty:
             logger.warning(f"No data returned for {symbol} ({ticker})")
             return pd.DataFrame()
+
         df.index = pd.to_datetime(df.index)
         df.columns = [c.lower() if isinstance(c, str) else c[0].lower() for c in df.columns]
         df = df.rename(columns={"adj close": "adj_close"})
@@ -243,7 +251,6 @@ class PCRAnalyzer:
         col = "oi" if by == "oi" else "volume"
         puts = option_chain_df[option_chain_df["type"] == "PE"][col].sum()
         calls = option_chain_df[option_chain_df["type"] == "CE"][col].sum()
-
         pcr = puts / calls if calls > 0 else 0.0
         sentiment = "bullish" if pcr < 0.8 else ("bearish" if pcr > 1.2 else "neutral")
 
@@ -266,10 +273,13 @@ class PCRAnalyzer:
             call_pain = option_chain_df[
                 (option_chain_df["type"] == "CE") & (option_chain_df["strike"] <= s)
             ]["oi"].sum() * max(0, s - spot)
+
             put_pain = option_chain_df[
                 (option_chain_df["type"] == "PE") & (option_chain_df["strike"] >= s)
             ]["oi"].sum() * max(0, spot - s)
+
             pain[s] = call_pain + put_pain
+
         return min(pain, key=pain.get) if pain else spot
 
     @staticmethod
@@ -308,14 +318,37 @@ class MarketDataAggregator:
         self.nse_client = NSEDataClient()
         self.hist_fetcher = HistoricalDataFetcher()
         self.parser = OptionChainParser()
+        self.kite_chain = KiteChainBuilder()
         self._cache: Dict = {}
 
     async def get_full_market_snapshot(self, symbol: str) -> Dict:
-        """One call → everything needed by the strategy engine."""
-        raw_chain = await self.nse_client.get_option_chain(symbol)
-        chain_df, spot, expiry = self.parser.parse(raw_chain)
+        """One call -> everything needed by the strategy engine.
 
-        vix = await VIXFetcher.get_india_vix_nse()
+        Uses Kite API as primary data source (NSE blocks cloud IPs).
+        Falls back to NSE if Kite fails.
+        """
+        # --- Option chain: Kite first, NSE fallback ---
+        try:
+            chain_df, spot, expiry = await asyncio.get_event_loop().run_in_executor(
+                None, self.kite_chain.get_option_chain, symbol
+            )
+            logger.info(f"Kite chain OK for {symbol}: {len(chain_df)} rows, spot={spot}")
+        except Exception as kite_err:
+            logger.warning(f"Kite fetch failed for {symbol}: {kite_err} -- trying NSE")
+            try:
+                raw_chain = await self.nse_client.get_option_chain(symbol)
+                chain_df, spot, expiry = self.parser.parse(raw_chain)
+            except Exception as nse_err:
+                logger.error(f"Both Kite and NSE failed for {symbol}: {nse_err}")
+                raise
+
+        # --- VIX: NSE first, fallback to default ---
+        try:
+            vix = await VIXFetcher.get_india_vix_nse()
+        except Exception:
+            vix = 15.0  # Default VIX when NSE is unreachable
+            logger.warning("VIX fetch failed, using default 15.0")
+
         pcr = PCRAnalyzer.compute_pcr(chain_df)
         max_pain = PCRAnalyzer.find_max_pain(chain_df, spot)
         sr = PCRAnalyzer.find_support_resistance_via_oi(chain_df)

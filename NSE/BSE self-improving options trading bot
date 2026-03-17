@@ -1,0 +1,15 @@
+Complete production system with:
+- Market data layer: NSE/BSE option chain API, PCR, max pain, IV surface
+- Options analytics: Black-Scholes pricing, full Greeks, IV solver, IV rank/IVP
+- Technical analysis: 40+ indicators, ML feature matrix, regime detection
+- 5 strategies: Iron Condor, Short Straddle, Bull Put, Bear Call, Momentum
+- Event-driven backtester with walk-forward validation and transaction costs
+- Auto-research loop: XGBoost/LightGBM ensemble, Optuna HPO, auto-deploy
+- Risk manager: Kelly sizing, drawdown circuit breakers, liquidity gates
+- Broker abstraction: Zerodha Kite, paper trading, Fyers/Angel placeholders
+- Plotly Dash real-time dashboard on port 8050
+- Telegram trade alerts and daily summaries
+- VM setup script (Ubuntu 22.04, systemd services, cron)
+- pytest test suite for analytics and risk engine
+
+https://claude.ai/code/session_01HJZZnW9BL8qWjgchzgDmzu
